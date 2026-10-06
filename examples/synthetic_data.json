@@ -1,0 +1,42 @@
+{
+  "catalog": [
+    {"track_id": "r1", "title": "Electric Horizon", "artist": "Northline", "album": "Highways", "tags": ["rock", "guitar", "energetic"], "year": 2019},
+    {"track_id": "r2", "title": "Midnight Engine", "artist": "Northline", "album": "Highways", "tags": ["rock", "driving", "guitar"], "year": 2020},
+    {"track_id": "r3", "title": "Crimson Stage", "artist": "Velvet Amp", "album": "Live Wire", "tags": ["rock", "anthem", "live"], "year": 2018},
+    {"track_id": "r4", "title": "After the Encore", "artist": "Velvet Amp", "album": "Live Wire", "tags": ["rock", "guitar", "melodic"], "year": 2018},
+    {"track_id": "j1", "title": "Blue Window", "artist": "Mira Quartet", "album": "Night Rooms", "tags": ["jazz", "piano", "calm"], "year": 2016},
+    {"track_id": "j2", "title": "Late Table", "artist": "Mira Quartet", "album": "Night Rooms", "tags": ["jazz", "saxophone", "night"], "year": 2017},
+    {"track_id": "j3", "title": "Soft Footsteps", "artist": "Harbor Trio", "album": "Rain Cafe", "tags": ["jazz", "acoustic", "relaxing"], "year": 2021},
+    {"track_id": "j4", "title": "First Train Home", "artist": "Harbor Trio", "album": "Rain Cafe", "tags": ["jazz", "piano", "morning"], "year": 2021},
+    {"track_id": "e1", "title": "Neon Current", "artist": "Signal Bloom", "album": "Pulse", "tags": ["electronic", "dance", "synth"], "year": 2022},
+    {"track_id": "e2", "title": "Glass Circuit", "artist": "Signal Bloom", "album": "Pulse", "tags": ["electronic", "synth", "upbeat"], "year": 2022},
+    {"track_id": "e3", "title": "Low Gravity", "artist": "Orbit Parks", "album": "Zero Hour", "tags": ["electronic", "ambient", "space"], "year": 2020},
+    {"track_id": "e4", "title": "Quiet Satellite", "artist": "Orbit Parks", "album": "Zero Hour", "tags": ["electronic", "ambient", "calm"], "year": 2020}
+  ],
+  "train_sessions": [
+    {"tracks": ["r1", "r2", "r3", "r4"]},
+    {"tracks": ["r2", "r1", "r4", "r3"]},
+    {"tracks": ["r1", "r3", "r2", "r4"]},
+    {"tracks": ["j1", "j2", "j3", "j4"]},
+    {"tracks": ["j2", "j1", "j4", "j3"]},
+    {"tracks": ["j1", "j3", "j2", "j4"]},
+    {"tracks": ["e1", "e2", "e3", "e4"]},
+    {"tracks": ["e2", "e1", "e4", "e3"]},
+    {"tracks": ["e1", "e3", "e2", "e4"]}
+  ],
+  "train_queries": [
+    {"session_id": "tr1", "turn_number": 2, "query": "more energetic guitar rock", "history": ["r1"], "target": "r2"},
+    {"session_id": "tr2", "turn_number": 3, "query": "another live rock anthem", "history": ["r2", "r3"], "target": "r4"},
+    {"session_id": "tr3", "turn_number": 2, "query": "calm piano jazz", "history": ["j1"], "target": "j2"},
+    {"session_id": "tr4", "turn_number": 3, "query": "relaxing acoustic jazz", "history": ["j1", "j3"], "target": "j4"},
+    {"session_id": "tr5", "turn_number": 2, "query": "upbeat electronic synth", "history": ["e1"], "target": "e2"},
+    {"session_id": "tr6", "turn_number": 3, "query": "calm ambient electronic", "history": ["e1", "e3"], "target": "e4"}
+  ],
+  "evaluation_queries": [
+    {"session_id": "ev1", "turn_number": 2, "query": "driving guitar music", "history": ["r1"], "target": "r2"},
+    {"session_id": "ev2", "turn_number": 4, "query": "melodic rock after a live song", "history": ["r1", "r2", "r3"], "target": "r4"},
+    {"session_id": "ev3", "turn_number": 2, "query": "late night saxophone jazz", "history": ["j1"], "target": "j2"},
+    {"session_id": "ev4", "turn_number": 4, "query": "quiet electronic space ambience", "history": ["e1", "e2", "e3"], "target": "e4"}
+  ]
+}
+
