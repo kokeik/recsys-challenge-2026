@@ -1,4 +1,4 @@
-# Turn-Aware Music Recommender
+# RecSys Challenge 2026
 
 A two-stage retrieval and learning-to-rank system for conversational music
 recommendation. It treats the cold first turn separately from later turns where
@@ -41,4 +41,3 @@ python -m turnaware_recsys.demo
 
 See the [Japanese README](README.md) and the
 [experiment report](reports/experiment_summary.md) for the full design rationale.
-

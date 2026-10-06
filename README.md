@@ -1,4 +1,4 @@
-# Turn-Aware Music Recommender
+# RecSys Challenge 2026
 
 会話型音楽推薦において、**会話初期と履歴が蓄積したターンを分けて扱う**、
 候補検索＋Learning-to-Rankの二段階推薦システムです。
@@ -143,4 +143,3 @@ Challenge 2026 Music Conversational Recommendation task. The challenge organizer
 dataset authors, official baselines, and my teammates are acknowledged for the shared
 task and collaborative environment. This repository contains only my portfolio-oriented
 reimplementation and aggregate experimental observations.
-
