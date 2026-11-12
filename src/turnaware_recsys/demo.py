@@ -4,122 +4,103 @@ import argparse
 import json
 from pathlib import Path
 
-from .candidate_pool import CandidatePoolBuilder
+from .data import load_example
+from .dense import DenseTrackRetriever
 from .evaluation import evaluate_rankings
-from .features import FeatureExtractor, QueryContext, Track
-from .item2vec import Item2VecConfig, RelationItem2Vec
-from .lexical import TfidfTrackRetriever
-from .reranker import TrainingQuery, TurnAwareReranker
+from .features import FeatureExtractor
+from .item2vec import Item2VecConfig
+from .pipeline import CandidateGenerator
+from .reranker import TurnAwareReranker
+from .training import fit_item2vec, generate_oof_queries
 
 
-def _artist_history_ranking(history: tuple[str, ...], catalog: dict[str, Track]) -> list[str]:
-    artists = {catalog[item].artist for item in history if item in catalog}
-    return [
-        track_id
-        for track_id, track in sorted(catalog.items())
-        if track.artist in artists and track_id not in history
-    ]
-
-
-def _load(path: Path):
-    raw = json.loads(path.read_text())
-    catalog = {
-        row["track_id"]: Track(
-            track_id=row["track_id"],
-            title=row["title"],
-            artist=row["artist"],
-            album=row.get("album", ""),
-            tags=tuple(row.get("tags", [])),
-            year=row.get("year"),
-        )
-        for row in raw["catalog"]
-    }
-    return raw, catalog
-
-
-def _candidate_query(
-    row: dict,
-    catalog: dict[str, Track],
-    item2vec: RelationItem2Vec,
-    lexical: TfidfTrackRetriever,
-    pool_builder: CandidatePoolBuilder,
-):
-    context = QueryContext(
-        session_id=row["session_id"],
-        turn_number=row["turn_number"],
-        query_text=row["query"],
-        history_track_ids=tuple(row["history"]),
-        category=row.get("category", "unknown"),
-        specificity=row.get("specificity", "unknown"),
+def run_demo(
+    data_path: Path,
+    *,
+    folds: int = 3,
+    item_topn: int = 8,
+    artist_topn: int = 5,
+    embeddings_path: Path | None = None,
+) -> dict:
+    catalog, sessions, train, evaluation = load_example(data_path)
+    dense, query_vectors = None, None
+    if embeddings_path is not None:
+        vectors = json.loads(embeddings_path.read_text(encoding="utf-8"))
+        dense = DenseTrackRetriever(vectors["tracks"])
+        query_vectors = {
+            (r["session_id"], r["turn_number"]): r["vector"] for r in vectors["queries"]
+        }
+    config = Item2VecConfig(vector_size=32, epochs=40)
+    oof = generate_oof_queries(
+        sessions,
+        train,
+        catalog,
+        folds=folds,
+        config=config,
+        item_topn=item_topn,
+        artist_topn=artist_topn,
+        dense=dense,
+        query_vectors=query_vectors,
     )
-    item_ids, item_scores = item2vec.recommend(context.history_track_ids, top_k=8)
-    text_ids, text_scores = lexical.search(
-        context.query_text, top_k=8, exclude=context.history_track_ids
+    # Evaluation uses a model refit on ALL training sessions, never evaluation sessions.
+    item2vec = fit_item2vec(sessions, catalog, config)
+    generator = CandidateGenerator(
+        catalog,
+        item2vec,
+        item_topn=item_topn,
+        artist_topn=artist_topn,
+        dense=dense,
+        query_vectors=query_vectors,
     )
-    artist_ids = _artist_history_ranking(context.history_track_ids, catalog)
-    candidates = pool_builder.build(
-        {"item2vec": item_ids, "tfidf": text_ids, "artist_history": artist_ids},
-        {"item2vec": item_scores, "tfidf": text_scores},
-        exclude=context.history_track_ids,
-    )
-    return context, candidates
-
-
-def run_demo(data_path: Path) -> dict:
-    raw, catalog = _load(data_path)
-    sequences = [row["tracks"] for row in raw["train_sessions"]]
-    item2vec = RelationItem2Vec(Item2VecConfig(vector_size=32, epochs=40)).fit(
-        sequences, catalog
-    )
-    lexical = TfidfTrackRetriever().fit(catalog)
-    pool_builder = CandidatePoolBuilder(
-        {"item2vec": 8, "tfidf": 8, "artist_history": 5}
-    )
-    extractor = FeatureExtractor(
-        catalog=catalog, source_names=("item2vec", "tfidf", "artist_history")
-    )
-    reranker = TurnAwareReranker(extractor)
-
-    training_queries = []
-    for row in raw["train_queries"]:
-        context, candidates = _candidate_query(row, catalog, item2vec, lexical, pool_builder)
-        training_queries.append(
-            TrainingQuery(context=context, candidates=candidates, target_track_id=row["target"])
-        )
-    reranker.fit(training_queries)
-
-    evaluation_rows = []
-    examples = []
-    for row in raw["evaluation_queries"]:
-        context, candidates = _candidate_query(row, catalog, item2vec, lexical, pool_builder)
-        ranking = reranker.rank(candidates, context)
-        evaluation_rows.append((context.turn_number, ranking, row["target"]))
+    reranker = TurnAwareReranker(FeatureExtractor(catalog, generator.source_names)).fit(oof.queries)
+    rows, examples = [], []
+    for query in evaluation:
+        context = query.context
+        if context.turn_number == 1:
+            ranking = generator.first_turn(context)
+        else:
+            candidates = generator.generate(context)
+            ranking = reranker.rank(candidates, context)
+        rows.append((context.turn_number, ranking, query.target_track_id))
         examples.append(
             {
                 "session_id": context.session_id,
                 "turn_number": context.turn_number,
-                "target": row["target"],
+                "target": query.target_track_id,
                 "top_5": ranking[:5],
             }
         )
-    return {
+    result = {
+        "data_kind": "synthetic_demo",
         "backend": reranker.backend,
-        "metrics": evaluate_rankings(evaluation_rows, ks=(5, 10)),
+        "candidate_sources": ["item2vec", "artist_history"],
+        "ranking_sources": list(generator.source_names),
+        "oof_training_queries": len(oof.queries),
+        "metrics": evaluate_rankings(rows, ks=(1, 5, 10)),
         "examples": examples,
     }
+    return result
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the synthetic end-to-end demo")
+    parser = argparse.ArgumentParser(description="Run the synthetic OOF + fixed-pool ranking demo")
     parser.add_argument(
-        "--data",
-        type=Path,
-        default=Path(__file__).parents[2] / "examples" / "synthetic_data.json",
+        "--data", type=Path, default=Path(__file__).parents[2] / "examples" / "synthetic_data.json"
     )
+    parser.add_argument("--folds", type=int, default=3)
+    parser.add_argument("--item-topn", type=int, default=8)
+    parser.add_argument("--artist-topn", type=int, default=5)
+    parser.add_argument("--embeddings", type=Path, help="Optional local track/query embedding JSON")
     args = parser.parse_args()
-    print(json.dumps(run_demo(args.data), indent=2))
+    result = run_demo(
+        args.data,
+        folds=args.folds,
+        item_topn=args.item_topn,
+        artist_topn=args.artist_topn,
+        embeddings_path=args.embeddings,
+    )
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
     main()
-

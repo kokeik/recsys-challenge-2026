@@ -3,12 +3,17 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from hashlib import sha256
 
 import numpy as np
 
 from .features import Track
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+
+
+def _stable_hash(value: str) -> int:
+    return int.from_bytes(sha256(value.encode("utf-8")).digest()[:8], "little")
 
 
 def _relation_tokens(track: Track) -> list[str]:
@@ -80,6 +85,7 @@ class RelationItem2Vec:
             negative=cfg.negative,
             epochs=cfg.epochs,
             seed=cfg.seed,
+            hashfxn=_stable_hash,
         )
         self.track_ids = sorted(track_id for track_id in catalog if track_id in self.model.wv)
         matrix = np.asarray([self.model.wv[track_id] for track_id in self.track_ids])
@@ -90,6 +96,8 @@ class RelationItem2Vec:
     def recommend(
         self, history_track_ids: Sequence[str], *, top_k: int = 100
     ) -> tuple[list[str], list[float]]:
+        if top_k < 0:
+            raise ValueError("top_k must not be negative")
         if self.model is None or self.track_matrix is None:
             raise RuntimeError("fit must be called before recommend")
         vectors = [self.model.wv[item] for item in history_track_ids if item in self.model.wv]
@@ -105,4 +113,3 @@ class RelationItem2Vec:
             [self.track_ids[index] for index in indices],
             [float(similarities[index]) for index in indices],
         )
-

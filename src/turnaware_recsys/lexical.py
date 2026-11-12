@@ -37,3 +37,14 @@ class TfidfTrackRetriever:
             [float(similarities[index]) for index in selected],
         )
 
+    def rank_candidates(
+        self, query: str, candidate_ids: Sequence[str]
+    ) -> tuple[list[str], list[float]]:
+        """Score only the supplied pool, retaining zero-score candidates."""
+        if self.matrix is None:
+            raise RuntimeError("fit must be called before rank_candidates")
+        index = {track_id: i for i, track_id in enumerate(self.track_ids)}
+        indices = [index[track_id] for track_id in candidate_ids]
+        scores = (self.matrix[indices] @ self.vectorizer.transform([query]).T).toarray().ravel()
+        order = np.argsort(-scores, kind="stable")
+        return [candidate_ids[i] for i in order], [float(scores[i]) for i in order]

@@ -16,3 +16,14 @@ def test_history_and_rank_features():
     assert values["same_album_ratio"] == 0.0
     assert values["query_track_overlap"] > 0.0
 
+
+def test_empty_album_is_not_a_history_match_and_scores_are_optional():
+    catalog = {"a": Track("a", "rock", "Artist"), "b": Track("b", "rock", "Artist")}
+    candidate = Candidate("b", {"item2vec": 2}, {"item2vec": 99.0})
+    extractor = FeatureExtractor(catalog, ("item2vec",))
+    values = extractor.transform_one(candidate, QueryContext("s", 2, "rock", ("a",)))
+    assert values["same_album_ratio"] == 0
+    assert values["item2vec_inv_rank_x_artist_ratio"] == 0.5
+    assert "item2vec_score" not in values
+    extractor.include_source_scores = True
+    assert extractor.transform_one(candidate, QueryContext("s", 2, "rock"))["item2vec_score"] == 99

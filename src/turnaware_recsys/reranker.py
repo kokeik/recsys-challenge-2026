@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from threadpoolctl import threadpool_limits
 
 from .candidate_pool import Candidate
 from .features import FeatureExtractor, QueryContext
@@ -63,6 +64,7 @@ class TurnAwareReranker:
                 min_child_samples=5,
                 random_state=self.random_state,
                 verbosity=-1,
+                n_jobs=1,
             )
             self.model.fit(x, y, group=groups)
             self.backend = "lightgbm-lambdarank"
@@ -77,20 +79,30 @@ class TurnAwareReranker:
                 max_leaf_nodes=15,
                 random_state=self.random_state,
             )
-            self.model.fit(x, y, sample_weight=weights)
+            with threadpool_limits(limits=1):
+                self.model.fit(x, y, sample_weight=weights)
             self.backend = "sklearn-classifier-fallback"
         return self
 
     def rank(self, candidates: Sequence[Candidate], context: QueryContext) -> list[str]:
         if self.model is None:
             raise RuntimeError("fit must be called before rank")
+        if not candidates:
+            return []
         matrix, names = self.extractor.transform(candidates, context)
         if names != self.feature_names_:
             raise RuntimeError("Feature schema changed between training and inference")
-        if self.backend == "lightgbm-lambdarank":
-            scores = self.model.predict(matrix)
-        else:
-            scores = self.model.predict_proba(matrix)[:, 1]
+        scores = self.predict_scores(matrix)
         order = np.argsort(-np.asarray(scores), kind="stable")
         return [candidates[index].track_id for index in order]
 
+    def predict_scores(self, matrix: np.ndarray) -> np.ndarray:
+        """Score a feature matrix using the fitted ranking model."""
+        if self.model is None:
+            raise RuntimeError("fit must be called before prediction")
+        if matrix.ndim != 2 or matrix.shape[1] != len(self.feature_names_):
+            raise ValueError("Feature matrix has the wrong schema")
+        if self.backend == "lightgbm-lambdarank":
+            return np.asarray(self.model.predict(matrix))
+        with threadpool_limits(limits=1):
+            return self.model.predict_proba(matrix)[:, 1]

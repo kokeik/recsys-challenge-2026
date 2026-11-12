@@ -43,6 +43,7 @@ class QueryContext:
 class FeatureExtractor:
     catalog: Mapping[str, Track]
     source_names: Sequence[str]
+    include_source_scores: bool = False
     feature_names_: list[str] = field(default_factory=list, init=False)
 
     def _history_stats(self, context: QueryContext) -> tuple[dict[str, int], dict[str, int]]:
@@ -52,13 +53,17 @@ class FeatureExtractor:
             track = self.catalog.get(track_id)
             if track is None:
                 continue
-            artists[track.artist] = artists.get(track.artist, 0) + 1
-            albums[track.album] = albums.get(track.album, 0) + 1
+            if track.artist:
+                artists[track.artist] = artists.get(track.artist, 0) + 1
+            if track.album:
+                albums[track.album] = albums.get(track.album, 0) + 1
         return artists, albums
 
     def transform_one(self, candidate: Candidate, context: QueryContext) -> dict[str, float]:
         track = self.catalog[candidate.track_id]
-        values = candidate.rank_features(self.source_names)
+        values = candidate.rank_features(
+            self.source_names, include_scores=self.include_source_scores
+        )
         history_artists, history_albums = self._history_stats(context)
         history_size = max(len(context.history_track_ids), 1)
         query_tokens = _tokens(context.query_text)
@@ -72,15 +77,17 @@ class FeatureExtractor:
                 "same_artist_ratio": history_artists.get(track.artist, 0) / history_size,
                 "same_album_count": float(history_albums.get(track.album, 0)),
                 "same_album_ratio": history_albums.get(track.album, 0) / history_size,
-                "query_track_overlap": len(query_tokens & track_tokens)
-                / max(len(query_tokens), 1),
+                "query_track_overlap": len(query_tokens & track_tokens) / max(len(query_tokens), 1),
                 "query_track_jaccard": len(query_tokens & track_tokens)
                 / max(len(query_tokens | track_tokens), 1),
-                "release_year_scaled": 0.0
-                if track.year is None
-                else (track.year - 1950) / 100.0,
+                "release_year_scaled": 0.0 if track.year is None else (track.year - 1950) / 100.0,
             }
         )
+        for source in self.source_names:
+            inverse = values[f"{source}_inv_rank"]
+            values[f"{source}_inv_rank_x_artist_ratio"] = inverse * values["same_artist_ratio"]
+            values[f"{source}_inv_rank_x_album_ratio"] = inverse * values["same_album_ratio"]
+            values[f"{source}_inv_rank_x_query_overlap"] = inverse * values["query_track_overlap"]
         return values
 
     def transform(
@@ -93,4 +100,3 @@ class FeatureExtractor:
         self.feature_names_ = names
         matrix = np.asarray([[row[name] for name in names] for row in rows], dtype=np.float32)
         return matrix, names
-
